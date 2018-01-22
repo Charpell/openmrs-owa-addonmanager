@@ -35,6 +35,7 @@ export default class ManageApps extends React.Component {
       isOpen: false,
       selectedApp: null,
       downloadUri: null,
+      checkUpdates: false,
       addonAlreadyInstalled: null,
       files: null,
       displayInvalidZip: false,
@@ -139,8 +140,7 @@ export default class ManageApps extends React.Component {
 
   handleApplist() {
     const installedOwas = [];
-    let installedModules = [];
-    let installedAddons = [];
+    const installedModules = [];
 
     this.apiHelper.get('/owa/applist').then(response => {
       response.forEach((data, index) => {
@@ -158,44 +158,23 @@ export default class ManageApps extends React.Component {
       const apiBaseUrl = `/${applicationDistribution}/${url}/ws/rest`;
       this.requestUrl = '/v1/module/?v=full';
       axios.get(`${urlPrefix}/${apiBaseUrl}${this.requestUrl}`).then(response => {
-        response.data.results.forEach(data => {
-          installedModules.push({
-            appDetails: data,
-            appType: "module",
-            install: false
-          });
-        });
-        installedAddons = installedOwas.concat(installedModules);
-        return Promise
-          .all(response.data.results.map(data => axios.get(`${ApiHelper.getAddonUrl()}?modulePackage=${data.packageName}`)
-            .then(response => response.data)
-            .catch(error => {
-              this.setState((prevState, nextProps) => ({
-                appList: installedAddons,
-                staticAppList: installedAddons,
-                searchComplete: true
-              }));
-              return data;
-            })));
-      }).then(response => {
-        installedAddons = [];
-        installedModules = [];
-        response.forEach((data) => {
+        response.data.results.forEach((data) => {
           installedModules.push({
             appDetails: data,
             appType: 'module',
             install: false
           });
-
         });
-      });
-      installedAddons = installedOwas.concat(installedModules);
-      this.setState((prevState, props) => {
-        return {
-          appList: installedAddons,
-          staticAppList: installedAddons,
-          searchComplete: true
-        };
+      }).then(() => {
+        const installedAddons = installedOwas.concat(installedModules);
+        this.setState((prevState, props) => {
+          return {
+            appList: installedAddons,
+            staticAppList: installedAddons,
+            searchComplete: true
+          };
+        });
+
       });
     });
   }
@@ -535,10 +514,12 @@ export default class ManageApps extends React.Component {
           downloadUri: response.data.versions[0].downloadUri,
         };
         this.setState({ newAddon });
+        this.handleApplist();
       }).catch((error) => {
         error.response.status === 401 ? location.href = `${location.href.substr(0, location.href.indexOf(location.href.split('/')[4]))}login.htm` : null;
         toastr.error(error);
       });
+      
   }
 
   handleInstall(addon) {
@@ -586,6 +567,8 @@ export default class ManageApps extends React.Component {
         });
         this.handleApplist();
       }).catch((error) => {
+        toastr.error(error)
+        console.log(error)
         error.response.status === 401 ? location.href = `${location.href.substr(0, location.href.indexOf(location.href.split('/')[4]))}login.htm` : null;
         toastr.error(error);
         this.setState((prevState, props) => {
@@ -669,7 +652,8 @@ export default class ManageApps extends React.Component {
 
   checkForUpdates() {
     this.setState({
-      searchComplete: false
+      searchComplete: false,
+      checkUpdates: true,
     });
     const updatesAvailable = {};
     this.props.checkLoginStatus();
@@ -692,10 +676,11 @@ export default class ManageApps extends React.Component {
           }
         });
       });
-
+console.log('I was here')
       this.setState({
         updatesAvailable,
         searchComplete: true,
+        checkUpdates: false
       });
     }).catch(
       (error) => {
@@ -707,11 +692,10 @@ export default class ManageApps extends React.Component {
   clearUpdates(){
     this.props.checkLoginStatus();
     this.setState({
-      searchComplete: false
-    });
-    this.setState({
+      searchComplete: false,
       updatesAvailable: null,
-      searchComplete: true
+      searchComplete: true,
+      checkUpdates: false
     });
   }
 
@@ -838,6 +822,7 @@ export default class ManageApps extends React.Component {
       msgBody,
       appList,
       searchedAddons,
+      checkUpdates,
       isOpen,
       selectedApp,
       searchComplete,
@@ -847,7 +832,7 @@ export default class ManageApps extends React.Component {
       upgradeVersion,
       openUpgradeConfirmation,
       displayInvalidZip, } = this.state;
-
+      
     if (showMsg === true) {
       setTimeout(this.handleAlertBehaviour, 6000);
     }
@@ -951,7 +936,7 @@ export default class ManageApps extends React.Component {
                         <th>Action</th>
                       </tr>
                     </thead>
-                    {searchedAddons.length < 1 && isSearched || updatesAvailable ?
+                    {searchedAddons.length < 1 && isSearched || (!updatesAvailable && checkUpdates) ?
                       <tbody>
                         <tr>
                           <th colSpan="5"><h4>No {searchedAddons.length < 1 && isSearched ? 'apps': 'updates'} found</h4></th>
