@@ -152,52 +152,55 @@ export default class ManageApps extends React.Component {
           upgrading: false,
         });
       });
+
+      const installedAddons = installedOwas.concat(installedModules);
+      this.setState((prevState, props) => {
+        return {
+          appList: installedAddons,
+          staticAppList: installedAddons,
+          searchComplete: false
+        };
+      });
     }).then(() => {
       const applicationDistribution = location.href.split('/')[2];
       const urlPrefix = location.href.substr(0, location.href.indexOf('//'));
       const url = location.href.split('/')[3];
       const apiBaseUrl = `/${applicationDistribution}/${url}/ws/rest`;
       this.requestUrl = '/v1/module/?v=full';
-      axios.get(`${urlPrefix}/${apiBaseUrl}${this.requestUrl}`).then(response => {
-        response.data.results.forEach(data => {
-          installedModules.push({
-            appDetails: data,
-            appType: "module",
-            install: false
-          });
-        });
-        installedAddons = installedOwas.concat(installedModules);
-        return Promise
-          .all(response.data.results.map(data => axios.get(`${ApiHelper.getAddonUrl()}/${data.packageName}`)
-            .then(response => response.data)
-            .catch(error => {
-              this.setState((prevState, nextProps) => ({
-                appList: installedAddons,
-                staticAppList: installedAddons,
-                searchComplete: true
-              }));
-              return data;
-            })));
-      }).then(response => {
-        installedAddons = [];
-        installedModules = [];
-        response.forEach((data) => {
-          installedModules.push({
-            appDetails: data,
-            appType: 'module',
-            install: false
-          });
 
-        });
-      });
-      installedAddons = installedOwas.concat(installedModules);
-      this.setState((prevState, props) => {
-        return {
-          appList: installedAddons,
-          staticAppList: installedAddons,
-          searchComplete: true
-        };
-      });
+        axios.get(`${urlPrefix}/${apiBaseUrl}${this.requestUrl}`).then(response => {
+          return Promise.all(response.data.results.map(data => {
+            return axios.get(`${ApiHelper.getAddonUrl()}?modulePackage=${data.packageName}`)
+              .then(response => {
+                return Object.assign({}, data, {maintainers: response.data.maintainers})
+              }).then(result => {
+                installedModules.push({
+                  appDetails: result,
+                  appType: 'module',
+                  install: false
+                });
+                return result;
+              }).catch(error => {
+                const installedAddons = installedOwas.concat(installedModules);
+                this.setState((prevState, nextProps) => ({
+                  appList: installedAddons,
+                  staticAppList: installedAddons,
+                  searchComplete: true
+                }));       
+                return data;
+              });
+              }));
+
+        }).then(() => {
+          const installedAddons = installedOwas.concat(installedModules);
+          this.setState((prevState, props) => {
+            return {
+              appList: installedAddons,
+              staticAppList: installedAddons,
+              searchComplete: true
+            };
+          });
+      })
     });
   }
 
@@ -580,7 +583,6 @@ export default class ManageApps extends React.Component {
             files: null,
             updatesAvailable: null,
             progressMsg: null,
-            searchedAddons: [],
             newAddon: null,
             upgrading: false,
             upgradeVersion: null,
@@ -626,7 +628,6 @@ export default class ManageApps extends React.Component {
             files: null,
             updatesAvailable: null,
             progressMsg: null,
-            searchedAddons: [],
             newAddon: null,
             upgrading: false,
           };
@@ -806,25 +807,25 @@ export default class ManageApps extends React.Component {
   getInstalled(appList, searchedAddons) {
     const installedSearchResults = {'modules':[], 'owas': []};
     const installedUuid = appList.reduce((filtered, app) =>{
-      if(app.appType === "module")filtered.push(app.appDetails.uuid);
+      if(app.appType === "module") app.appDetails.uuid ? filtered.push(app.appDetails.uuid) : filtered.push(app.appDetails.uid);
       return filtered;
     }, []);
     const installedNames = appList.reduce((filtered, app) => {
-      if(app.appType === "owa")filtered.push(app.appDetails.name);
+      if(app.appType === "owa")app.appDetails.folderName ? filtered.push(app.appDetails.folderName) : filtered.push(app.appDetails.name);
       return filtered;
     }, []);
 
     searchedAddons.forEach((addon) => {
-      addon.appDetails.type === "OMOD"?
-        installedUuid.includes(addon.appDetails.moduleId)?
-          installedSearchResults['modules'].push(addon.appDetails.moduleId)
-          :
-          null
+      (addon.appDetails.type === "OMOD") ?
+        (installedUuid.includes(addon.appDetails.moduleId) || installedUuid.includes(addon.appDetails.uid)) ?
+          addon.appDetails.moduleId ? installedSearchResults['modules'].push(addon.appDetails.moduleId)
+            : installedSearchResults['modules'].push(addon.appDetails.uid)
+          : null
         :
-        installedNames.includes(addon.appDetails.name)?
-          installedSearchResults['owas'].push(addon.appDetails.name)
-          :
-          null;
+        (installedNames.includes(addon.appDetails.folderName) || installedNames.includes(addon.appDetails.name))?
+          addon.appDetails.folderName? installedSearchResults['owas'].push(addon.appDetails.folderName)
+            : installedSearchResults['owas'].push(addon.appDetails.name)
+          : null;
     });
     return installedSearchResults;
   }
@@ -954,24 +955,25 @@ export default class ManageApps extends React.Component {
                         <th>Action</th>
                       </tr>
                     </thead>
-                    {searchedAddons.length < 1 && isSearched || (!updatesAvailable && checkUpdates) ?
-                      <tbody>
-                        <tr>
-                          <th colSpan="5"><h4>No {searchedAddons.length < 1 && isSearched ? 'apps': 'updates'} found</h4></th>
-                        </tr>
-                      </tbody> :
-                      <AddonList
-                        addonList={appList}
-                        searchedAddons={searchedAddons}
-                        handleUserClick={this.handleUserClick}
-                        updatesAvailable={updatesAvailable}
-                        openPage={this.openPage}
-                        openModal={this.openModal}
-                        handleDownload={this.handleDownload}
-                        handleInstall={this.handleInstall}
-                        handleUpgrade={this.handleUpgrade}
-                        getInstalled={this.getInstalled}
-                      />
+                    {
+                      searchedAddons.length < 1 && isSearched ?
+                        <tbody>
+                          <tr>
+                            <th colSpan="5"><h4>No apps found</h4></th>
+                          </tr>
+                        </tbody> :
+                        <AddonList
+                          addonList={appList}
+                          searchedAddons={searchedAddons}
+                          handleUserClick={this.handleUserClick}
+                          updatesAvailable={updatesAvailable}
+                          openPage={this.openPage}
+                          openModal={this.openModal}
+                          handleDownload={this.handleDownload}
+                          handleInstall={this.handleInstall}
+                          handleUpgrade={this.handleUpgrade}
+                          getInstalled={this.getInstalled}
+                        />
                     }
                   </table>
                 </Loader>
